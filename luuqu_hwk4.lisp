@@ -504,18 +504,32 @@ is a validity when the variable is t and when it is nil.
 ; (check-validp e) = t, then evaluating e under a, an arbitrary
 ; if-assign, results in t.
 
-(property validp-nil (e :norm-if-expr)
-  (=> (^ (consp e)
-	 (varp (cadr e))
-	 (validp e nil))
-      (^ (validp (caddr e) (list (cons (cadr e) t)))
-	 (validp (cadddr e) (list (cons (cadr e) nil))))))
+(definec subset-assign (a0 a1 :if-assign) :bool
+  (match a0
+    (() t)
+    (((var . val) . r)
+     (^ (== (lookup-var var a1) val)
+	(subset-assign r a1)))))
 
-(property validp-if-eval (e :norm-if-expr a :if-assign)
-  :hints (("goal" :induct (norm-if-exprp e)))
-  (=> (validp e nil) (if-eval e a)))
+(property subset-assign-prop (x :if-atom a0 a1 :if-assign)
+  (=> (^ (assignedp x a0) (subset-assign a0 a1))
+      (== (lookup-atom x a1) (lookup-atom x a0))))
+
+(property subset-assign-lookup (x :var a0 a1 :if-assign)
+  (=> (^ (subset-assign a0 a1) (lookup-var x a0))
+      (lookup-var x a1))
+  :rule-classes :forward-chaining)
+
+(property validp-if-eval (e :norm-if-expr a0 a1 :if-assign)
+  :hints (("goal" :induct (validp e a0)))
+  (=> (^ (validp e a0) (subset-assign a0 a1))
+      (if-eval e a1)))
 
 (property check-validp-is-sound (e :if-expr a :if-assign)
+  :hints (("goal" :use ((:instance validp-if-eval
+				   (e (if-flat e))
+				   (a0 nil)
+				   (a1 a)))))
   (=> (check-validp e) (if-eval e a)))
 
 ; Configuration: update as per instructions
@@ -529,7 +543,24 @@ is a validity when the variable is t and when it is nil.
 ; if-expr evaluates to nil. With this proof, we now know that
 ; check-validp is a decision procedure for PL validity.
 
-...
+#|
+(definec false-assign (e :if-expr)
+  (match e
+    (:if-atom (if (boole)
+    (('if x y z)
+     (if (assignedp x a)
+         (if (lookup-atom x a)
+             (validp y a)
+             (validp z a))
+         (and (validp y (acons x t a))
+              (validp z (acons x nil a)))))))
+  
+
+(property check-validp-is-complete (e :if-expr)
+  (=> (! (check-validp e))
+      (! (if-eval e (false-assign e)))))
+|#
+
 
 #|
 
@@ -639,10 +670,12 @@ plan and use the professional method to sketch out a proof.
   (=> (sortedp x)
       (sortedp (less a x))))
 
+#|
 (property app-less-cons-notless (a :all x :tl)
   (=> (sortedp x)
       (== (append (less a x) (notless a x))
 	  x)))
+|#
 
 (property insert-break (a b :all x y :tl)
   :h (<< a b)
@@ -730,19 +763,19 @@ plan and use the professional method to sketch out a proof.
 (property isort-less-notless (a :all x :tl)
   :b (== (isort (app (less a x) (notless a x)))
          (isort x))
-:hints (("goal" :induct (isort x))
-("subgoal *1/2"
-:cases ((<< (car x) a)))
-("subgoal *1/2.2"
-:use ((:instance case2)))
-("subgoal *1/2.2'''"
-:use ((:instance isort-app-commutes
-		 (x (less a (cdr x)))
-		 (y (cons (car x) (notless a (cdr x)))))))
-("subgoal *1/2.2'6'"
-:use ((:instance isort-app-commutes
-		 (x (notless a (cdr x)))
-		 (y (less a (cdr x))))))))
+  :hints (("goal" :induct (isort x))
+          ("subgoal *1/2"
+            :cases ((<< (car x) a)))
+          ("subgoal *1/2.2"
+            :use ((:instance case2)))
+          ("subgoal *1/2.2'''"
+            :use ((:instance isort-app-commutes
+		             (x (less a (cdr x)))
+		             (y (cons (car x) (notless a (cdr x)))))))
+          ("subgoal *1/2.2'6'"
+            :use ((:instance isort-app-commutes
+		             (x (notless a (cdr x)))
+		             (y (less a (cdr x))))))))
 
 (property isort-less-cons-notless (a :all x :tl)
   :b (== (isort (app (less a x) (cons a (notless a x))))

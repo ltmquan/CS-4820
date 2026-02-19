@@ -13,6 +13,7 @@
 
  The group members are:
  Quan Luu
+ Reilly Teeter
 
 |#
 
@@ -543,24 +544,17 @@ is a validity when the variable is t and when it is nil.
 ; if-expr evaluates to nil. With this proof, we now know that
 ; check-validp is a decision procedure for PL validity.
 
-#|
-(definec false-assign (e :if-expr)
+(definec false-assign (e :norm-if-expr a :if-assign) :if-assign
   (match e
-    (:if-atom (if (boole)
+    (:if-atom
+     (if (lookup-atom e a) nil a))
     (('if x y z)
      (if (assignedp x a)
          (if (lookup-atom x a)
-             (validp y a)
-             (validp z a))
-         (and (validp y (acons x t a))
-              (validp z (acons x nil a)))))))
-  
-
-(property check-validp-is-complete (e :if-expr)
-  (=> (! (check-validp e))
-      (! (if-eval e (false-assign e)))))
-|#
-
+             (false-assign y a)
+             (false-assign z a))
+         (let ((fa1 (false-assign y (acons x t a))))
+           (if fa1 fa1 (false-assign z (acons x nil a))))))))
 
 #|
 
@@ -632,8 +626,8 @@ plan and use the professional method to sketch out a proof.
 ; Proving isort returns a sorted list
 
 (property insert-preserves-sortedness (a :all x :tl)
-  (=> (sortedp x)
-      (sortedp (insert a x))))
+  :h (sortedp x)
+  (sortedp (insert a x)))
 
 (property isort-is-sorted (x :tl)
   (sortedp (isort x)))
@@ -666,139 +660,21 @@ plan and use the professional method to sketch out a proof.
   (== (isort (notless a x))
       (notless a (isort x))))
 
-(property less-preserves-sortedness (a :all x :tl)
-  (=> (sortedp x)
-      (sortedp (less a x))))
+(property less-<<= (a :all x :tl)
+  (=> (^ (sortedp x) (<<= a (car x)))
+      (== (less a x) nil)))
 
-#|
 (property app-less-cons-notless (a :all x :tl)
   (=> (sortedp x)
-      (== (append (less a x) (notless a x))
-	  x)))
-|#
-
-(property insert-break (a b :all x y :tl)
-  :h (<< a b)
-  :b (== (insert a (app x (cons b y)))
-	 (app (insert a x) (cons b y))))
-
-(definec lessp (x :tl a :all) :bool
-  (or (not x)
-      (and (<< (car x) a)
-	   (lessp (cdr x) a))))
-
-(definec geqp (x :tl a :all) :bool
-  (or (not x)
-      (and (<<= a (car x))
-	   (geqp (cdr x) a))))
-
-(property less-is-lessp (a :all x :tl)
-  (lessp (less a x) a))
-
-(property notless-is-geqp (a :all x :tl)
-  (geqp (notless a x) a))
-
-(property insert-geqp (a :all x :tl)
-  :h (geqp x a)
-  :b (== (insert a x) (cons a x)))
-
-(property insert-cons-cond (x :tl a b :all)
-  :h (and (== (insert a x) (cons a x))
-	  (<< a b))
-  :b (== (insert a (insert b x))
-	 (cons a (insert b x))))
-
-(property isort-geqp (x :tl a :all)
-  :h (geqp x a)
-  :b (== (isort (cons a x))
-	 (cons a (isort x))))
-
-(property isort-app (a :all x y :tl)
-  :h (and (lessp x a) (geqp y a))
-  :b (==
-      (app (isort x) (isort (cons a y)))
-      (isort (app x (cons a y))))
-  :hints (("goal" :induct (isort x))
-	  ("subgoal *1/2"
-:use ((:instance insert-break
-		 (a (car x))
-		 (b a)
-		 (x (isort (cdr x)))
-		 (y (isort y)))))))
-
-(property isort-app-less-notless (a :all x :tl)
-  (== (app (isort (less a x))
-           (cons a (isort (notless a x))))
-      (isort (app (less a x)
-	     (cons a (notless a x)))))
-  :hints (("goal"
-  :use ((:instance isort-app
-		   (x (less a x))
-		   (y (notless a x)))))))
-
-(property insert-commutes (a b :all x :tl)
-  (== (insert a (insert b x))
-      (insert b (insert a x))))
-
-(property is-insert=insert-is (a :all x :tl)
-  (== (isort (insert a x)) (insert a (isort x))))
-
-(property insert-isort-app (x y :tl)
-  :h y
-  :b (== (insert (car y) (isort (app x (cdr y))))
-         (isort (app x y))))
-
-(property isort-app-commutes (x y :tl)
-  (== (isort (app x y)) (isort (app y x)))
-  :hints (("subgoal *1/3''" :use ((:instance insert-isort-app (x y) (y x))))))
-
-(property case2 (a :all x :tl)
-  :h (and x (not (<< (car x) a)))
-  :b (and
-       (<<= a (car x))
-       (== (less a x) (less a (cdr x)))
-       (== (notless a x) (cons (car x) (notless a (cdr x)))))
-  :rule-classes :forward-chaining)
-
-(property isort-less-notless (a :all x :tl)
-  :b (== (isort (app (less a x) (notless a x)))
-         (isort x))
-  :hints (("goal" :induct (isort x))
-          ("subgoal *1/2"
-            :cases ((<< (car x) a)))
-          ("subgoal *1/2.2"
-            :use ((:instance case2)))
-          ("subgoal *1/2.2'''"
-            :use ((:instance isort-app-commutes
-		             (x (less a (cdr x)))
-		             (y (cons (car x) (notless a (cdr x)))))))
-          ("subgoal *1/2.2'6'"
-            :use ((:instance isort-app-commutes
-		             (x (notless a (cdr x)))
-		             (y (less a (cdr x))))))))
-
-(property isort-less-cons-notless (a :all x :tl)
-  :b (== (isort (app (less a x) (cons a (notless a x))))
-         (isort (cons a x)))
-  :hints (("goal"
-            :do-not-induct t
-            :use ((:instance isort-app-commutes
-		             (x (less a x))
-		             (y (cons a (notless a x))))))
-          ("goal'''"
-            :use ((:instance isort-app-commutes
-		   (x (notless a x))
-		   (y (less a x)))))
-          ("goal'6'"
-            :use ((:instance isort-less-notless)))))
+      (== (app (less a x) (cons a (notless a x)))
+	  (insert a x))))
 
 (property qsort=isort (x :tl)
+  :hints (("goal" :use ((:instance app-less-cons-notless
+					      (a (car x))
+					      (x (isort (cdr x)))))))
   (== (qsort x)
-      (isort x))
-  :hints (("goal" :induct (qsort x))
-	  ("subgoal *1/2'''"
-	    :use ((:instance isort-less-cons-notless (a x1) (x x2))))))
-
+      (isort x)))
 #|
 
 Extra Credit 1. (25 points each, all or nothing)
@@ -816,3 +692,20 @@ have experience with other theorem provers. ACL2 is not allowed this
 time.
 
 |#
+
+(definec permp (x y :tl) :bool
+  (== (isort x) (isort y)))
+
+(property sorted-isort (x :tl)
+  (=> (sortedp x)
+      (== (isort x) x)))
+
+(property (x y :tl)
+  (=> (^ (sortedp x) (sortedp y) (permp x y))
+     (== x y)))
+
+(property (x :tl)
+  (^ (sortedp (isort x)) (permp (isort x) x)))
+
+(property (x :tl)
+  (^ (sortedp (qsort x)) (permp (qsort x) x)))

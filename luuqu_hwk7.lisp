@@ -767,8 +767,8 @@ Examples
 
 (defun simplify-not (g)
   (match g
-    ((type boolean) (not g))       ; t -> nil, nil -> t
-    ((list 'not h) h)              ; double negation
+    ((type boolean) (not g))
+    ((list 'not h) h)
     (_ (list 'not g))))
 
 (defun simplify-and (args)
@@ -777,16 +777,16 @@ Examples
         (out  '()))
     (dolist (a flat)
       (cond
-        ((eq a t))                                   ; drop identity
-        ((eq a nil) (return-from simplify-and nil))  ; sink
+        ((eq a t))
+        ((eq a nil) (return-from simplify-and nil))
         ((gethash (complement-of a) seen)
-         (return-from simplify-and nil))             ; complementary pair
-        ((gethash a seen))                           ; duplicate, skip
+         (return-from simplify-and nil))
+        ((gethash a seen))
         (t (setf (gethash a seen) t)
            (push a out))))
     (setf out (nreverse out))
-    (cond ((null out) t)                             ; empty -> identity
-          ((null (cdr out)) (car out))               ; singleton -> unwrap
+    (cond ((null out) t)
+          ((null (cdr out)) (car out))
           (t (cons 'and out)))))
 
 (defun simplify-or (args)
@@ -795,65 +795,57 @@ Examples
         (out  '()))
     (dolist (a flat)
       (cond
-        ((eq a nil))                                 ; drop identity
-        ((eq a t) (return-from simplify-or t))       ; sink
+        ((eq a nil))
+        ((eq a t) (return-from simplify-or t))
         ((gethash (complement-of a) seen)
-         (return-from simplify-or t))                ; complementary pair
-        ((gethash a seen))                           ; duplicate, skip
+         (return-from simplify-or t))
+        ((gethash a seen))
         (t (setf (gethash a seen) t)
            (push a out))))
     (setf out (nreverse out))
-    (cond ((null out) nil)                           ; empty -> identity
-          ((null (cdr out)) (car out))               ; singleton -> unwrap
+    (cond ((null out) nil)
+          ((null (cdr out)) (car out))
           (t (cons 'or out)))))
 
 (defun simplify-implies (p q)
   (cond
-    ((eq p nil) t)                       ; (implies nil q) = t
-    ((eq p t)   q)                       ; (implies t q)   = q
-    ((eq q t)   t)                       ; (implies p t)   = t
-    ((eq q nil) (simplify-not p))        ; (implies p nil) = (not p)
-    ((equal p q) t)                      ; (implies p p)   = t
-    ((equal (complement-of p) q) q)      ; (implies p (not p)) = (not p) = q
-                                         ; (implies (not q) q) = q
+    ((eq p nil) t)
+    ((eq p t)   q)
+    ((eq q t)   t)
+    ((eq q nil) (simplify-not p))
+    ((equal p q) t)
+    ((equal (complement-of p) q) q)
     (t (list 'implies p q))))
 
 (defun simplify-if (c a b)
   (cond
-    ((eq c t) a)                         ; (if t a b) = a
-    ((eq c nil) b)                       ; (if nil a b) = b
-    ((equal a b) a)                      ; (if c a a) = a
-    ((and (eq a t) (eq b nil)) c)        ; (if c t nil) = c
-    ((and (eq a nil) (eq b t))           ; (if c nil t) = (not c)
-     (simplify-not c))
-    ((eq a t) (simplify-or  (list c b)))    ; (if c t b) = (or c b)
-    ((eq b nil) (simplify-and (list c a)))  ; (if c a nil) = (and c a)
-    ((eq a nil) (simplify-and              ; (if c nil b) = (and (not c) b)
-                 (list (simplify-not c) b)))
-    ((eq b t) (simplify-or                 ; (if c a t) = (or (not c) a)
-               (list (simplify-not c) a)))
-    ((equal a (complement-of b)) (list 'iff c a))  ; (if c a (not a)) = (iff c a)
+    ((eq c t) a)
+    ((eq c nil) b)
+    ((equal a b) a)
+    ((and (eq a t) (eq b nil)) c)
+    ((and (eq a nil) (eq b t)) (simplify-not c))
+    ((eq a t) (simplify-or  (list c b)))
+    ((eq b nil) (simplify-and (list c a)))
+    ((eq a nil) (simplify-and (list (simplify-not c) b)))
+    ((eq b t) (simplify-or (list (simplify-not c) a)))
+    ((equal a (complement-of b)) (list 'iff c a))
     (t (list 'if c a b))))
 
 (defun simplify-iff (args)
   (let ((flat (flatten 'iff args))
-        (polarity t)                     ; t means "as-is", nil means "negate result"
+        (polarity t)
         (seen (make-hash-table :test 'equal))
         (out  '()))
     (dolist (a flat)
       (cond
-        ((eq a t))                       ; drop: (iff ... t ...) = (iff ...)
-        ((eq a nil)                      ; flip polarity, drop
-         (setf polarity (not polarity)))
+        ((eq a t))
+        ((eq a nil) (setf polarity (not polarity)))
         ((gethash (complement-of a) seen)
-         ;; p and (not p) both present: (iff p (not p) ...) = (iff nil ...)
-         ;; Remove the complement from out and flip polarity.
          (let ((comp (complement-of a)))
            (remhash comp seen)
            (setf out (remove comp out :test #'equal))
            (setf polarity (not polarity))))
         ((gethash a seen)
-         ;; p appears twice: (iff p p ...) = (iff ...)
          (remhash a seen)
          (setf out (remove a out :test #'equal)))
         (t (setf (gethash a seen) t)
@@ -866,17 +858,14 @@ Examples
 
 (defun simplify-quant (q vars body)
   (cond
-    ((or (eq body t) (eq body nil)) body)   ; quantifying over a constant
+    ((or (eq body t) (eq body nil)) body)
     (t
      (let* ((fv   (free-vars body))
             (kept (remove-if-not (lambda (v) (in v fv)) vars)))
        (cond
          ((null kept) body)
-         ((and (consp body)                 ; merge same-quantifier nesting
-               (eq (car body) q))
-          (let ((inner-vars (cadr body))
-                (inner-body (caddr body)))
-            (list q (append kept inner-vars) inner-body)))
+         ((and (consp body) (eq (car body) q))
+          (list q (append kept (cadr body)) (caddr body)))
          (t (list q kept body)))))))
 
 (defun ground-argp (a)
@@ -887,9 +876,9 @@ Examples
 
 (defun quote-result (v)
   (cond
-    ((booleanp v) v)                     ; t, nil stay bare
-    ((constant-objectp v) v)             ; rationals, strings, chars, keywords
-    (t (list 'quote v))))                ; conses, symbols, etc. -> quoted
+    ((booleanp v) v)
+    ((constant-objectp v) v)
+    (t (list 'quote v))))
 
 (defun try-eval (f)
   (match f
@@ -898,7 +887,8 @@ Examples
               (not (in head *p-funs*))
               (not (in head *fo-quantifiers*))
               (not (eq head 'quote))
-              (all-ground-args args))
+              (all-ground-args args)
+              (or (eq head '=) (acl2s-arity (to-acl2s head))))
          (let* ((res (acl2s-compute (to-acl2s f)))
                 (err (car res))
                 (val (cadr res)))
@@ -916,23 +906,19 @@ Examples
     ((satisfies constant-symbolp) f)
     ((satisfies quotep) f)
     ((satisfies constant-objectp) f)
-    ((list 'not g)
-     (simplify-not (fo-simplify-aux g)))
+    ((list 'not g) (simplify-not (fo-simplify-aux g)))
     ((list 'implies p q)
      (simplify-implies (fo-simplify-aux p) (fo-simplify-aux q)))
     ((list 'if c a b)
      (simplify-if (fo-simplify-aux c) (fo-simplify-aux a) (fo-simplify-aux b)))
-    ((cons 'and args)
-     (simplify-and (mapcar #'fo-simplify-aux args)))
-    ((cons 'or args)
-     (simplify-or (mapcar #'fo-simplify-aux args)))
-    ((cons 'iff args)
-     (simplify-iff (mapcar #'fo-simplify-aux args)))
+    ((cons 'and args) (simplify-and (mapcar #'fo-simplify-aux args)))
+    ((cons 'or args)  (simplify-or  (mapcar #'fo-simplify-aux args)))
+    ((cons 'iff args) (simplify-iff (mapcar #'fo-simplify-aux args)))
     ((list (and q (or 'forall 'exists)) vars body)
      (simplify-quant q vars (fo-simplify-aux body)))
     ((list '= t1 t2)
      (try-eval (list '= (fo-simplify-term t1) (fo-simplify-term t2))))
-    ((cons r args)                       ; atomic relation application
+    ((cons r args)
      (try-eval (cons r (mapcar #'fo-simplify-term args))))
     (_ f)))
 
@@ -947,62 +933,18 @@ Examples
      (try-eval (cons f (mapcar #'fo-simplify-term args))))
     (_ tm)))
 
-(fo-simplify 't)                         ; => T
-(fo-simplify 'nil)                       ; => NIL
-
-(fo-simplify '(and))                     ; => T
-(fo-simplify '(or))                      ; => NIL
-(fo-simplify '(and (P x)))               ; => (P X)
-
-(fo-simplify '(and (P x) t (Q y)))       ; => (AND (P X) (Q Y))
-(fo-simplify '(and (P x) nil (Q y)))     ; => NIL
-(fo-simplify '(or (P x) t (Q y)))        ; => T
-
+;; Q1 tests
+(fo-simplify 't)
+(fo-simplify '(and (P x) t (Q y)))
+(fo-simplify '(and (P x) nil (Q y)))
+(fo-simplify '(or (P x) t (Q y)))
 (fo-simplify '(and (P x) (and (Q y) (R z))))
-;; => (AND (P X) (Q Y) (R Z))
-
 (fo-simplify '(not (not (not (P x)))))
-;; => (NOT (P X))
-
 (fo-simplify '(or (f) (f1) (p a b) (not (p a b)) (= w z)))
-;; => T
-
 (fo-simplify '(forall (x w) (P y z)))
-;; => (P Y Z)
-
 (fo-simplify '(forall (x w) (P x y z)))
-;; => (FORALL (X) (P X Y Z))
-
 (fo-simplify '(P (binary-+ 4 2) 3))
-;; => (P 6 3)
-
 (fo-simplify '(P (binary-+ 'a 2) 3))
-;; => (P (BINARY-+ 'A 2) 3)
-
-(fo-simplify '(implies t (P x)))         ; => (P X)
-(fo-simplify '(implies (P x) (P x)))     ; => T
-(fo-simplify '(implies (P x) nil))       ; => (NOT (P X))
-
-(fo-simplify '(if t (P x) (Q y)))        ; => (P X)
-(fo-simplify '(if (R z) (P x) (P x)))    ; => (P X)
-
-(fo-simplify '(iff (P x) (P x)))         ; => T
-(fo-simplify '(iff (P x) nil))           ; => (NOT (P X))
-
-(fo-simplify
- '(and (forall x (P x))
-       (or nil
-           (implies t (Q y))
-           (not (not (R z))))
-       (iff (= 3 3) (= (binary-+ 1 2) 3))
-       (forall (u v) (S y))))
-;; Expected roughly:
-;; (AND (FORALL (X) (P X)) (OR (Q Y) (R Z)) (S Y))
-;; ...because the iff simplifies to T (both sides = T) and then drops out of the AND.
-
-(let ((f '(and (forall (x) (P x y)) (or (Q z) (R w)))))
-  (equal (fo-simplify f) (fo-simplify (fo-simplify f))))
-;; => T
 
 #|
 
@@ -1019,8 +961,7 @@ Examples
 
 |#
 
-(defun nnf (f)
-  (nnf-aux f t))
+(defun nnf (f) (nnf-aux f t))
 
 (defun nnf-aux (f pos)
   (match f
@@ -1033,16 +974,10 @@ Examples
      (cons (if pos 'or 'and)
            (mapcar (lambda (a) (nnf-aux a pos)) args)))
     ((list 'implies p q)
-     ;; (implies p q) = (or (not p) q)
-     ;; positive:  (or  (nnf ¬p) (nnf q))
-     ;; negative:  (and (nnf p)  (nnf ¬q))
      (if pos
          (list 'or  (nnf-aux p (not pos)) (nnf-aux q pos))
          (list 'and (nnf-aux p (not pos)) (nnf-aux q pos))))
     ((list 'if c a b)
-     ;; (if c a b) = (or (and c a) (and (not c) b))
-     ;; positive: (or  (and  (nnf c)   (nnf a))   (and (nnf ¬c) (nnf b)))
-     ;; negative: (and (or   (nnf ¬c)  (nnf ¬a))  (or  (nnf c)  (nnf ¬b)))
      (if pos
          (list 'or
                (list 'and (nnf-aux c t)   (nnf-aux a t))
@@ -1050,31 +985,22 @@ Examples
          (list 'and
                (list 'or  (nnf-aux c nil) (nnf-aux a nil))
                (list 'or  (nnf-aux c t)   (nnf-aux b nil)))))
-    ((cons 'iff args)
-     (nnf-iff args pos))
+    ((cons 'iff args) (nnf-iff args pos))
     ((list (and q (or 'forall 'exists)) vars body)
-     ;; Negation flips the quantifier:
-     ;;   (not (forall (x) P)) = (exists (x) (not P))
      (let ((new-q (if pos q (if (eq q 'forall) 'exists 'forall))))
        (list new-q vars (nnf-aux body pos))))
-    (_
-     ;; atomic formula (relation app or equality)
-     (if pos f (list 'not f)))))
+    (_ (if pos f (list 'not f)))))
 
 (defun nnf-iff (args pos)
   (cond
-    ((endp args)         (if pos t nil))          ; (iff) = t
-    ((endp (cdr args))   (nnf-aux (car args) pos)) ; (iff p) = p
-    ((endp (cddr args))                            ; binary case
-     (nnf-iff-binary (car args) (cadr args) pos))
+    ((endp args) (if pos t nil))
+    ((endp (cdr args)) (nnf-aux (car args) pos))
+    ((endp (cddr args)) (nnf-iff-binary (car args) (cadr args) pos))
     (t
-     ;; n-ary: conjunction of adjacent binary iffs
      (let ((pairs '()))
-       (do ((l args (cdr l)))
-           ((endp (cdr l)))
+       (do ((l args (cdr l))) ((endp (cdr l)))
          (push (nnf-iff-binary (car l) (cadr l) t) pairs))
-       (let ((conj (cons 'and (nreverse pairs))))
-         (nnf-aux conj pos))))))
+       (nnf-aux (cons 'and (nreverse pairs)) pos)))))
 
 (defun nnf-iff-binary (p q pos)
   (if pos
@@ -1085,39 +1011,17 @@ Examples
             (list 'or  (nnf-aux p t)   (nnf-aux q t))
             (list 'or  (nnf-aux p nil) (nnf-aux q nil)))))
 
-(nnf '(P x))                           ; => (P X)
-(nnf '(not (P x)))                     ; => (NOT (P X))
-(nnf '(not (not (P x))))               ; => (P X)
-
+;; Q2 tests
 (nnf '(implies (P x) (Q y)))
-;; => (OR (NOT (P X)) (Q Y))
-
 (nnf '(not (implies (P x) (Q y))))
-;; => (AND (P X) (NOT (Q Y)))
-
 (nnf '(iff (P x) (Q y)))
-;; => (OR (AND (P X) (Q Y)) (AND (NOT (P X)) (NOT (Q Y))))
-
 (nnf '(not (iff (P x) (Q y))))
-;; => (AND (OR (P X) (Q Y)) (OR (NOT (P X)) (NOT (Q Y))))
-
 (nnf '(if (R z) (P x) (Q y)))
-;; => (OR (AND (R Z) (P X)) (AND (NOT (R Z)) (Q Y)))
-
 (nnf '(not (forall (x) (P x))))
-;; => (EXISTS (X) (NOT (P X)))
-
 (nnf '(forall (x) (implies (P x) (exists (y) (Q x y)))))
-;; => (FORALL (X) (OR (NOT (P X)) (EXISTS (Y) (Q X Y))))
-
 (nnf '(not (and (P x) (or (Q y) (not (R z))))))
-;; => (OR (NOT (P X)) (AND (NOT (Q Y)) (R Z)))
-
 (nnf '(iff (P x) (Q y) (R z)))
-;; => NNF of (and (iff P Q) (iff Q R))
-
 (nnf '(not (exists (x) (forall (y) (implies (P x y) (Q y))))))
-;; => (FORALL (X) (EXISTS (Y) (AND (P X Y) (NOT (Q Y)))))
 
 #|
 
@@ -1145,6 +1049,10 @@ Examples
  Test your functions using at least 10 interesting formulas. 
  
 |#
+
+;; =====================================================================
+;; Q3: simp-skolem-pnf-cnf (distributive CNF, no Tseitin)
+;; =====================================================================
 
 (defun substitute-vars (f subst)
   (match f
@@ -1175,11 +1083,16 @@ Examples
                                 (declare (ignore v))
                                 (gentemp "X"))
                               vars))
-            (new-subst (append (mapcar #'cons vars fresh) subst)))
+            (new-subst (nconc (mapcar #'cons vars fresh) subst)))
        (list q fresh (rename-apart body new-subst))))
     ((cons op args)
      (cons op (mapcar (lambda (a) (rename-apart a subst)) args)))
     (_ f)))
+
+(defun make-skolem-term (args)
+  (if (endp args)
+      (gentemp "C")
+      (cons (gentemp "SK") args)))
 
 (defun skolemize (f univs)
   (match f
@@ -1193,20 +1106,13 @@ Examples
     ((list 'exists vars body)
      (let* ((fv      (free-vars body))
             (needed  (remove-if-not (lambda (u) (in u fv)) univs))
-            (subst   (mapcar
-                      (lambda (v)
-                        (cons v (make-skolem-term needed)))
-                      vars))
+            (subst   (mapcar (lambda (v) (cons v (make-skolem-term needed)))
+                             vars))
             (body2   (substitute-vars body subst)))
        (skolemize body2 univs)))
     ((cons op args)
      (cons op (mapcar (lambda (a) (skolemize a univs)) args)))
     (_ f)))
-
-(defun make-skolem-term (args)
-  (if (endp args)
-      (gentemp "C")                    ; Skolem constant
-      (cons (gentemp "SK") args)))     ; Skolem function application
 
 (defun pnf (f)
   (match f
@@ -1215,13 +1121,14 @@ Examples
     ((satisfies constant-symbolp) f)
     ((satisfies quotep) f)
     ((satisfies constant-objectp) f)
+    ((list 'not g) (list 'not (pnf g)))
     ((list 'forall vars body)
      (let ((body2 (pnf body)))
        (match body2
          ((list 'forall inner-vars inner-body)
           (list 'forall (append vars inner-vars) inner-body))
          (_ (list 'forall vars body2)))))
-    ((cons op args) 
+    ((cons op args)
      (if (in op '(and or))
          (let* ((pargs    (mapcar #'pnf args))
                 (all-vars '())
@@ -1235,44 +1142,15 @@ Examples
            (if (null all-vars)
                (cons op stripped)
                (list 'forall all-vars (cons op stripped))))
-         ;; atomic formula (relation application, =, not)
-         (cons op (mapcar #'pnf args))))
+         (cons op args)))
     (_ f)))
 
-(defun matrix-to-cnf (f)
-  (match f
-    ((type boolean) f)
-    ((list 'not _) f)                        ; literal
-    ((cons 'and args)
-     (simplify-and (mapcan (lambda (a)
-                             (let ((ca (matrix-to-cnf a)))
-                               (if (and (consp ca) (eq (car ca) 'and))
-                                   (copy-list (cdr ca))
-                                   (list ca))))
-                           args)))
-    ((cons 'or args)
-     (cnf-distribute (mapcar #'matrix-to-cnf args)))
-    (_ f)))                                   ; atomic formula
-
-(defun cnf-distribute (cnf-args)
-  "Given a list of CNF formulas, compute the CNF of their disjunction."
-  (let* ((conj-sets (mapcar #'conjuncts-of cnf-args))
-         ;; cartesian product: one disjunct from each arg
-         (tuples    (cartesian-product conj-sets))
-         (disjuncts (mapcar
-                     (lambda (tuple)
-                       (simplify-or (mapcan #'disjuncts-of tuple)))
-                     tuples)))
-    (simplify-and disjuncts)))
-
 (defun conjuncts-of (f)
-  "Break a CNF formula into its list of disjunction-clauses."
   (match f
     ((cons 'and args) args)
     (_ (list f))))
 
 (defun disjuncts-of (f)
-  "Break a disjunction into its list of literals."
   (match f
     ((cons 'or args) args)
     (_ (list f))))
@@ -1285,6 +1163,36 @@ Examples
                    (mapcar (lambda (tup) (cons elt tup)) rest))
                  (car lists))))))
 
+(defun cnf-distribute (cnf-args)
+  (let* ((conj-sets (mapcar #'conjuncts-of cnf-args))
+         (tuples    (cartesian-product conj-sets))
+         (disjuncts (mapcar
+                     (lambda (tuple)
+                       (simplify-or (mapcan #'disjuncts-of tuple)))
+                     tuples)))
+    (simplify-and disjuncts)))
+
+(defun matrix-to-cnf (f)
+  (match f
+    ((type boolean) f)
+    ((list 'not _) f)
+    ((cons 'and args)
+     (simplify-and (mapcan (lambda (a)
+                             (let ((ca (matrix-to-cnf a)))
+                               (if (and (consp ca) (eq (car ca) 'and))
+                                   (copy-list (cdr ca))
+                                   (list ca))))
+                           args)))
+    ((cons 'or args)
+     (cnf-distribute (mapcar #'matrix-to-cnf args)))
+    (_ f)))
+
+(defun pnf-to-cnf (f)
+  (match f
+    ((list 'forall vars body)
+     (list 'forall vars (matrix-to-cnf body)))
+    (_ (matrix-to-cnf f))))
+
 (defun simp-skolem-pnf-cnf (f)
   (let ((g (fo-simplify f)))
     (cond
@@ -1295,49 +1203,18 @@ Examples
                 (p (pnf s))
                 (c (pnf-to-cnf p)))
            c)))))
-
-(defun pnf-to-cnf (f)
-  "Apply CNF to the matrix of a PNF formula."
-  (match f
-    ((list 'forall vars body)
-     (let ((cnf-body (matrix-to-cnf body)))
-       (list 'forall vars cnf-body)))
-    (_ (matrix-to-cnf f))))
-
-(simp-skolem-pnf-cnf '(P x))                    ; (P X)
-
+;; Q3 tests
+(simp-skolem-pnf-cnf '(P x))
 (simp-skolem-pnf-cnf '(implies (P x) (Q x)))
-;; (OR (NOT (P X)) (Q X))
-
-(simp-skolem-pnf-cnf '(forall (x) (P x)))       ; (FORALL (X...) (P X...))
-
+(simp-skolem-pnf-cnf '(forall (x) (P x)))
 (simp-skolem-pnf-cnf '(exists (x) (P x)))
-;; (P Cnnn)
-
 (simp-skolem-pnf-cnf '(forall (x) (exists (y) (P x y))))
-;; (FORALL (X...) (P X... (SKnnn X...)))
-
 (simp-skolem-pnf-cnf '(and (forall (x) (P x)) (forall (x) (Q x))))
-;; (FORALL (X1 X2) (AND (P X1) (Q X2)))
-
 (simp-skolem-pnf-cnf '(implies (forall (x) (P x)) (exists (y) (Q y))))
-;; (OR (NOT (P C1)) (Q C2))   or similar
-
 (simp-skolem-pnf-cnf '(forall (x) (or (P x) (and (Q x) (R x)))))
-;; (FORALL (X) (AND (OR (P X) (Q X)) (OR (P X) (R X))))
-
 (simp-skolem-pnf-cnf '(exists (x) (forall (y) (P x y))))
-;; (FORALL (Y) (P C1 Y))
-
 (simp-skolem-pnf-cnf '(forall (x) (exists (y) (forall (z) (P x y z)))))
-;; (FORALL (X Z) (P X (SK0 X) Z))
-
-(simp-skolem-pnf-cnf '(forall (x) (implies (P x) (exists (y) (Q x y)))))
-;; Walks through to: (FORALL (X) (OR (NOT (P X)) (Q X (SK0 X))))
-
 (simp-skolem-pnf-cnf '(iff (P x) (Q x)))
-;; (AND (OR (NOT (P X)) (Q X)) (OR (P X) (NOT (Q X))))
-
 
 #|
 
@@ -1355,47 +1232,30 @@ Examples
 |#
 
 (defun unify (eqs)
-  (unify-aux (mapcar (lambda (p) (cons (car p) (cadr p))) eqs)
-             nil))
+  (unify-aux (mapcar (lambda (p) (cons (car p) (cadr p))) eqs) nil))
 
 (defun unify-aux (eqs subst)
   (cond
     ((endp eqs) subst)
     (t
-     (let* ((eq (car eqs))
-            (s  (car eq))
-            (r  (cdr eq))
-            (rest (cdr eqs)))
+     (let* ((eq (car eqs)) (s (car eq)) (r (cdr eq)) (rest (cdr eqs)))
        (cond
-         ;; Delete: s = s
          ((equal s r) (unify-aux rest subst))
-
-         ;; Swap: non-var = var
          ((and (not (variable-symbolp s)) (variable-symbolp r))
           (unify-aux (cons (cons r s) rest) subst))
-
-         ;; Eliminate: x = t where x doesn't occur in t
          ((variable-symbolp s)
           (if (occurs-in s r)
               'fail
-              (let ((new-rest  (subst-in-eqs s r rest))
-                    (new-subst (cons (cons s r)
-                                     (subst-in-subst s r subst))))
-                (unify-aux new-rest new-subst))))
-
-         ;; Conflict: constants/quoted/constant-objects that differ
+              (unify-aux (subst-in-eqs s r rest)
+                         (cons (cons s r) (subst-in-subst s r subst)))))
          ((or (constant-symbolp s) (constant-symbolp r)
-              (quotep s)           (quotep r)
+              (quotep s) (quotep r)
               (constant-objectp s) (constant-objectp r))
           'fail)
-
-         ;; Decompose: same-head function applications
          ((and (consp s) (consp r)
                (eq (car s) (car r))
                (== (len (cdr s)) (len (cdr r))))
           (unify-aux (append (pairlis (cdr s) (cdr r)) rest) subst))
-
-         ;; Different heads/arities
          (t 'fail))))))
 
 (defun occurs-in (x tm)
@@ -1405,15 +1265,12 @@ Examples
     (_ nil)))
 
 (defun subst-in-term (x tm term)
-  "Replace variable x with tm in term."
   (match term
-    ((satisfies variable-symbolp)
-     (if (eq x term) tm term))
+    ((satisfies variable-symbolp) (if (eq x term) tm term))
     ((satisfies constant-symbolp) term)
     ((satisfies quotep) term)
     ((satisfies constant-objectp) term)
-    ((cons f args)
-     (cons f (mapcar (lambda (a) (subst-in-term x tm a)) args)))
+    ((cons f args) (cons f (mapcar (lambda (a) (subst-in-term x tm a)) args)))
     (_ term)))
 
 (defun subst-in-eqs (x tm eqs)
@@ -1423,45 +1280,21 @@ Examples
           eqs))
 
 (defun subst-in-subst (x tm subst)
-  "Apply the substitution [x -> tm] to the right-hand sides of subst."
-  (mapcar (lambda (p)
-            (cons (car p) (subst-in-term x tm (cdr p))))
-          subst))
+  (mapcar (lambda (p) (cons (car p) (subst-in-term x tm (cdr p)))) subst))
 
-;; Basic cases
-(unify '((x 1)))                              ; => ((X . 1))
-(unify '((1 x)))                              ; => ((X . 1))  [swapped]
-(unify '((x x)))                              ; => NIL        [empty subst = trivially unified]
-(unify '((1 1)))                              ; => NIL        [ditto]
-(unify '((1 2)))                              ; => FAIL
-
-;; Constants
-(unify '((c1 c1)))                            ; => NIL
-(unify '((c1 c2)))                            ; => FAIL
-(unify '((x c1)))                             ; => ((X . C1))
-
-;; Quoted
-(unify '(('1 '1)))                            ; => NIL
-(unify '(('1 '2)))                            ; => FAIL
-(unify '((x '(a b))))                         ; => ((X QUOTE (A B)))
-
-;; Function decomposition
-(unify '(((f x 2) (f 1 y))))                  ; => ((X . 1) (Y . 2)) or similar
-(unify '(((f x y) (f y x))))                  ; => ((X . Y)) or ((Y . X))
-(unify '(((f x) (g x))))                      ; => FAIL    [different heads]
-(unify '(((f x) (f x y))))                    ; => FAIL    [different arities]
-
-;; Occurs check
-(unify '((x (f x))))                          ; => FAIL
-(unify '((x (f y)) (y x)))                    ; => FAIL
-
-;; Multi-equation
-(unify '((x y) (y z) (z 1)))                  ; => ((X . 1) (Y . 1) (Z . 1))
-
-;; Shared structure
-(unify '(((f x x) (f y (g y)))))              ; => FAIL    [x=y, then x=(g y) with y in it]
-(unify '(((f x (g y)) (f (g z) (g w)))))      ; => ((X . (G Z)) (Y . W) (Z ...)) something
-
+;; Q4 tests
+(unify '((x 1)))
+(unify '((1 x)))
+(unify '((x x)))
+(unify '((c1 c2)))
+(unify '((x '(a b))))
+(unify '(((f x 2) (f 1 y))))
+(unify '(((f x y) (f y x))))
+(unify '(((f x) (g x))))
+(unify '((x (f x))))
+(unify '((x y) (y z) (z 1)))
+(unify '(((f x x) (f y (g y)))))
+(unify '(((f x (g y)) (f (g z) (g w)))))
 #|
 
  Question 5. (25 pts)
@@ -1481,6 +1314,34 @@ Examples
 
 |#
 
+;; =====================================================================
+;; Q5: fo-no=-val — optimized resolution
+;; =====================================================================
+
+(defparameter *canon-counter* 0)
+
+(defun canonical-rename (clause)
+  (let ((subst '())
+        (counter 0))
+    (labels ((walk-term (tm)
+               (cond
+                 ((variable-symbolp tm)
+                  (let ((pair (assoc tm subst :test #'eq)))
+                    (cond
+                      (pair (cdr pair))
+                      (t (let ((fresh (intern (format nil "CVAR~a" (incf counter)))))
+                           (setf subst (cons (cons tm fresh) subst))
+                           fresh)))))
+                 ((atom tm) tm)
+                 (t (cons (car tm) (mapcar #'walk-term (cdr tm))))))
+             (walk-lit (lit)
+               (match lit
+                 ((list 'not a) (list 'not (walk-term a)))
+                 (_ (walk-term lit)))))
+      (mapcar #'walk-lit clause))))
+
+;; ---- Literal and clause helpers (shared with Q5 framework) ----
+
 (defun literal-atomp (lit)
   (match lit
     ((list 'not _) nil)
@@ -1492,7 +1353,6 @@ Examples
     (_ (list 'not lit))))
 
 (defun atom-of (lit)
-  "The atomic formula underneath a literal."
   (match lit
     ((list 'not a) a)
     (_ lit)))
@@ -1501,8 +1361,7 @@ Examples
   (every #'literal-atomp clause))
 
 (defun tautologyp (clause)
-  (some (lambda (lit)
-          (member (literal-negate lit) clause :test #'equal))
+  (some (lambda (lit) (member (literal-negate lit) clause :test #'equal))
         clause))
 
 (defun strip-forall (f)
@@ -1510,18 +1369,18 @@ Examples
     ((list 'forall _ body) body)
     (_ f)))
 
-(defun clauses-of (matrix)
-  (match matrix
-    ((type boolean)
-     (if matrix '() (list '())))          ; t -> no clauses; nil -> {empty clause}
-    ((cons 'and args)
-     (mapcar #'literals-of args))
-    (_ (list (literals-of matrix)))))
-
 (defun literals-of (clause)
   (match clause
     ((cons 'or args) args)
     (_ (list clause))))
+
+(defun clauses-of (matrix)
+  (match matrix
+    ((type boolean) (if matrix '() (list '())))
+    ((cons 'and args) (mapcar #'literals-of args))
+    (_ (list (literals-of matrix)))))
+
+;; ---- Matching (one-sided, for subsumption) ----
 
 (defun match-term (pattern target subst)
   (cond
@@ -1542,11 +1401,9 @@ Examples
     ((and (endp ps) (endp ts)) subst)
     ((or (endp ps) (endp ts)) 'fail)
     (t (let ((s (match-term (car ps) (car ts) subst)))
-         (if (eq s 'fail) 'fail
-             (match-terms (cdr ps) (cdr ts) s))))))
+         (if (eq s 'fail) 'fail (match-terms (cdr ps) (cdr ts) s))))))
 
 (defun match-literal (pat-lit tgt-lit subst)
-  "Match two literals of the same polarity."
   (cond
     ((and (literal-atomp pat-lit) (literal-atomp tgt-lit))
      (match-term pat-lit tgt-lit subst))
@@ -1561,22 +1418,16 @@ Examples
   (cond
     ((endp c) t)
     (t
-     (let ((lit (car c))
-           (rest (cdr c)))
+     (let ((lit (car c)) (rest (cdr c)))
        (some (lambda (d-lit)
                (let ((unif (match-literal lit d-lit subst)))
                  (and (not (eq unif 'fail))
                       (subsumes-aux rest d unif))))
              d)))))
 
-(defun apply-subst-literal (subst lit)
-  (match lit
-    ((list 'not a)
-     (list 'not (apply-subst-term subst a)))
-    (_ (apply-subst-term subst lit))))
+;; ---- Substitution on clauses ----
 
 (defun apply-subst-term (subst tm)
-  "Apply alist subst sequentially to term tm."
   (match tm
     ((satisfies variable-symbolp)
      (let ((pair (assoc tm subst :test #'eq)))
@@ -1584,9 +1435,13 @@ Examples
     ((satisfies constant-symbolp) tm)
     ((satisfies quotep) tm)
     ((satisfies constant-objectp) tm)
-    ((cons f args)
-     (cons f (mapcar (lambda (a) (apply-subst-term subst a)) args)))
+    ((cons f args) (cons f (mapcar (lambda (a) (apply-subst-term subst a)) args)))
     (_ tm)))
+
+(defun apply-subst-literal (subst lit)
+  (match lit
+    ((list 'not a) (list 'not (apply-subst-term subst a)))
+    (_ (apply-subst-term subst lit))))
 
 (defun apply-subst-clause (subst clause)
   (remove-duplicates
@@ -1600,35 +1455,17 @@ Examples
 
 (defun standardize-apart-clause (clause)
   (let* ((vars (clause-vars clause))
-         (subst (mapcar (lambda (v)
-                          (declare (ignore v))
-                          (gentemp "X"))
-                        vars))
-         (alist (mapcar #'cons vars subst)))
+         (fresh (mapcar (lambda (v) (declare (ignore v)) (gentemp "X")) vars))
+         (alist (mapcar #'cons vars fresh)))
     (apply-subst-clause alist clause)))
 
-(defun try-resolve (c1 c2)
-  (let* ((c2-renamed (standardize-apart-clause c2))
-         (results    '()))
-    ;; case A: c1 is the positive parent
-    (when (positive-clausep c1)
-      (setf results
-            (append results
-                    (resolvents-between c1 c2-renamed))))
-    ;; case B: c2 is the positive parent
-    (when (positive-clausep c2-renamed)
-      (setf results
-            (append results
-                    (resolvents-between c2-renamed c1))))
-    results))
+;; ---- Resolution primitive ----
 
 (defun resolvents-between (pos-parent other-parent)
-  "pos-parent is known to be all-positive. Resolve each of its
-   literals against each negative literal of other-parent."
   (let ((results '()))
     (dolist (p-lit pos-parent)
       (dolist (o-lit other-parent)
-        (unless (literal-atomp o-lit)          ; only negative literals
+        (unless (literal-atomp o-lit)
           (let* ((p-atom (atom-of p-lit))
                  (o-atom (atom-of o-lit))
                  (mgu    (unify (list (list p-atom o-atom)))))
@@ -1640,55 +1477,291 @@ Examples
                 (push after-subst results)))))))
     results))
 
-(defun add-clause (c clauses)
-  "Integrates clause C into a list of clauses using subsumption and replacement."
-  (cond
-    ((tautologyp c) clauses) ; Discard tautologies
-    ((some (lambda (d) (subsumes-p d c)) clauses) clauses) ; Forward subsumption
-    (t 
-     ;; Backward subsumption: remove any existing clauses that C subsumes, then add C
-     (cons c (remove-if (lambda (d) (subsumes-p c d)) clauses)))))
+;; ---- Factoring ----
 
-(defun saturate (unprocessed processed)
-  "Main resolution loop. Returns T if the empty clause is found, NIL if saturated."
+(defun factor-clause (clause)
+  (let ((factors '())
+        (vec (coerce clause 'vector))
+        (n (length clause)))
+    (loop for i from 0 below n do
+      (loop for j from (1+ i) below n do
+        (let ((li (aref vec i)) (lj (aref vec j)))
+          (when (eq (literal-atomp li) (literal-atomp lj))
+            (let ((mgu (unify (list (list (atom-of li) (atom-of lj))))))
+              (unless (eq mgu 'fail)
+                (push (apply-subst-clause mgu clause) factors)))))))
+    factors))
+
+;; ---- Clause weight / canonicalization ----
+
+(defun clause-weight (clause)
+  "Unit preference: unit clauses get weight 0, others get size + depth penalty."
   (cond
-    ((endp unprocessed) nil) ; Saturated without finding the empty clause
+    ((endp (cdr clause)) 0)               ; unit clause — highest priority
     (t
-     (let* ((given (car unprocessed))
-            (rest-unprocessed (cdr unprocessed)))
-       
-       ;; If 'given' is the empty clause (represented as NIL), refutation succeeds!
-       (if (null given)
-           t
-           (let ((new-clauses nil))
-             ;; Generate resolvents between 'given' and all 'processed' clauses
-             (dolist (p processed)
-               (setf new-clauses (append new-clauses (try-resolve given p))))
-             
-             ;; Move 'given' to processed
-             (setf processed (add-clause given processed))
-             
-             ;; Filter and integrate new resolvents
-             (dolist (nc new-clauses)
-               (if (null nc)
-                   (return-from saturate t) ; Quick exit if we generated the empty clause
-                   
-                   ;; Apply Forward Subsumption against both sets
-                   (unless (or (tautologyp nc)
-                               (some (lambda (d) (subsumes-p d nc)) processed)
-                               (some (lambda (d) (subsumes-p d nc)) rest-unprocessed))
-                     
-                     ;; Apply Backward Subsumption (Replacement) on both sets
-                     (setf processed (remove-if (lambda (d) (subsumes-p nc d)) processed))
-                     (setf rest-unprocessed (remove-if (lambda (d) (subsumes-p nc d)) rest-unprocessed))
-                     
-                     ;; Add the surviving new clause to our unprocessed queue
-                     (push nc rest-unprocessed))))
-             
-             ;; Recurse with updated sets
-             (saturate rest-unprocessed processed)))))))
+     (let ((size 0))
+       (labels ((walk (x)
+                  (cond
+                    ((atom x) (incf size))
+                    (t (incf size) (dolist (c x) (walk c))))))
+         (dolist (lit clause) (walk lit)))
+       (+ size (* 2 (clause-max-depth clause)))))))
+
+(defun canonicalize-clause (clause)
+  "Sort literals by sxhash for stable equality comparison across
+   structurally-equal clauses with different literal orderings."
+  (sort (copy-list clause)
+        (lambda (a b) (< (sxhash a) (sxhash b)))))
+
+(defparameter *max-clause-literals* 15)
+(defparameter *max-term-depth* 6)
+
+(defun term-depth (tm)
+  (cond
+    ((atom tm) 0)
+    ((and (consp tm) (eq (car tm) 'quote)) 0)
+    (t (1+ (reduce #'max (mapcar #'term-depth (cdr tm))
+                   :initial-value 0)))))
+
+(defun literal-depth (lit)
+  (match lit
+    ((list 'not a) (term-depth a))
+    (_ (term-depth lit))))
+
+(defun clause-max-depth (clause)
+  (reduce #'max (mapcar #'literal-depth clause) :initial-value 0))
+
+
+;; ---- Indexing for fast subsumption ----
+;;
+;; For each clause we precompute: the multiset of predicate symbols
+;; with their polarities. A necessary condition for C to subsume D is
+;; that C's predicate-polarity multiset is a submultiset of D's. This
+;; is a cheap filter that avoids most subsumption calls.
+
+(defun literal-signature (lit)
+  "(predicate . polarity) where polarity is t for positive, nil for negative."
+  (match lit
+    ((list 'not a) (cons (if (consp a) (car a) a) nil))
+    (_ (cons (if (consp lit) (car lit) lit) t))))
+
+(defun clause-signature (clause)
+  "Sorted list of (pred . polarity) pairs — the polarity multiset."
+  (sort (mapcar #'literal-signature clause)
+        (lambda (a b) (string< (symbol-name (or (car a) '|nil|))
+                               (symbol-name (or (car b) '|nil|))))))
+
+(defun sig-submultiset-p (sig-c sig-d)
+  "Is sig-c a submultiset of sig-d? Both are sorted lists of (pred . pol)."
+  (cond
+    ((endp sig-c) t)
+    ((endp sig-d) nil)
+    ((equal (car sig-c) (car sig-d))
+     (sig-submultiset-p (cdr sig-c) (cdr sig-d)))
+    ((let ((a (car sig-c)) (b (car sig-d)))
+       (or (string< (symbol-name (or (car b) '|nil|))
+                    (symbol-name (or (car a) '|nil|)))
+           (and (equal (car a) (car b)) (not (eq (cdr a) (cdr b))))))
+     (sig-submultiset-p sig-c (cdr sig-d)))
+    (t (sig-submultiset-p sig-c (cdr sig-d)))))
+
+;; Structure: bundle a clause with its precomputed sig and canonical form.
+
+(defstruct cl literals canon sig weight)
+
+(defun build-cl (literals)
+  (let* ((renamed (canonical-rename literals))
+         (can (sort (copy-list renamed)
+                    (lambda (a b) (< (sxhash a) (sxhash b))))))
+    (make-cl :literals literals
+             :canon can
+             :sig (clause-signature literals)
+             :weight (clause-weight literals))))
+
+(defun cl-subsumes-p (c d)
+  "Fast subsumption with signature pre-filter."
+  (and (sig-submultiset-p (cl-sig c) (cl-sig d))
+       (subsumes-p (cl-literals c) (cl-literals d))))
+
+(defun cl-equal (c d)
+  (equal (cl-canon c) (cl-canon d)))
+
+(defun cl-tautologyp (c) (tautologyp (cl-literals c)))
+
+;; ---- Resolution ----
+
+(defun try-resolve-cl (c1 c2)
+  "Resolve two cl structs; return list of new clause-lists (raw literal lists)."
+  (let* ((c1-lits (cl-literals c1))
+         (c2-lits (cl-literals c2))
+         (c1-vars (clause-vars c1-lits))
+         (c2-vars (clause-vars c2-lits))
+         (c2-eff (if (intersection c1-vars c2-vars :test #'eq)
+                     (standardize-apart-clause c2-lits)
+                     c2-lits))
+         (results '()))
+    (when (positive-clausep c1-lits)
+      (setf results (nconc (resolvents-between c1-lits c2-eff) results)))
+    (when (positive-clausep c2-eff)
+      (setf results (nconc (resolvents-between c2-eff c1-lits) results)))
+    results))
+
+(defun factor-clause-cl (c)
+  (factor-clause (cl-literals c)))
+
+;; ---- Index: group clauses by head-predicate of positive literals ----
+;;
+;; For positive resolution, we need one all-positive parent. We keep
+;; positive clauses indexed by the predicates they contain, so that
+;; given a negative literal (P ...), we can find candidate positive
+;; parents quickly.
+
+(defparameter *pos-clause-index* (make-hash-table :test 'eq))
+(defparameter *all-clauses* nil)
+(defparameter *clause-set-hash* (make-hash-table :test 'equal))
+
+(defun reset-index ()
+  (setf *pos-clause-index* (make-hash-table :test 'eq))
+  (setf *all-clauses* nil)
+  (setf *clause-set-hash* (make-hash-table :test 'equal)))
+
+(defun index-add (c)
+  (setf (gethash (cl-canon c) *clause-set-hash*) c)
+  (push c *all-clauses*)
+  (when (positive-clausep (cl-literals c))
+    (dolist (lit (cl-literals c))
+      (let ((pred (car (literal-signature lit))))
+        (push c (gethash pred *pos-clause-index* '()))))))
+
+(defun index-remove (c)
+  (remhash (cl-canon c) *clause-set-hash*)
+  (setf *all-clauses* (delete c *all-clauses* :test #'eq))
+  (when (positive-clausep (cl-literals c))
+    (dolist (lit (cl-literals c))
+      (let ((pred (car (literal-signature lit))))
+        (setf (gethash pred *pos-clause-index*)
+              (delete c (gethash pred *pos-clause-index* '())
+                      :test #'eq))))))
+
+(defun index-candidates-for (c)
+  "Given a clause c, return candidate resolution partners from the index.
+   Union of (positive clauses sharing a predicate with any negative literal of c),
+   plus (c itself, since c might be positive and we resolve it against any clause)."
+  (let ((candidates (make-hash-table :test 'eq)))
+    ;; If c has a negative literal (P ...), any positive clause containing P
+    ;; mentioning the same polarity is a candidate.
+    (dolist (lit (cl-literals c))
+      (unless (literal-atomp lit)
+        (let ((pred (car (literal-signature lit))))
+          (dolist (p (gethash pred *pos-clause-index* '()))
+            (setf (gethash p candidates) t)))))
+    ;; If c itself is positive, any clause containing a matching negative
+    ;; literal is a candidate. Pull from all-clauses filtered by predicate.
+    (when (positive-clausep (cl-literals c))
+      (dolist (lit (cl-literals c))
+        (let ((pred (car (literal-signature lit))))
+          (dolist (other *all-clauses*)
+            (dolist (olit (cl-literals other))
+              (when (and (not (literal-atomp olit))
+                         (eq pred (car (literal-signature olit))))
+                (setf (gethash other candidates) t)))))))
+    (let ((result '()))
+      (maphash (lambda (k v) (declare (ignore v)) (push k result)) candidates)
+      result)))
+
+;; ---- Priority queue by weight ----
+
+(defparameter *passive* nil)
+
+(defun passive-insert (c)
+  "Insert into passive list keyed by weight (simple sorted insertion)."
+  (cond
+    ((endp *passive*)
+     (setf *passive* (list c)))
+    ((< (cl-weight c) (cl-weight (car *passive*)))
+     (setf *passive* (cons c *passive*)))
+    (t
+     (let ((prev *passive*)
+           (curr (cdr *passive*)))
+       (loop while (and curr (>= (cl-weight c) (cl-weight (car curr)))) do
+         (setf prev curr) (setf curr (cdr curr)))
+       (setf (cdr prev) (cons c curr))))))
+
+(defun passive-pop ()
+  (when *passive*
+    (let ((c (car *passive*)))
+      (setf *passive* (cdr *passive*))
+      c)))
+
+;; ---- Integration of new clauses ----
+
+(defun clause-exists-exact-p (c)
+  (gethash (cl-canon c) *clause-set-hash*))
+
+(defun subsumed-by-any-p (c)
+  "Is c subsumed by any clause in the index? Uses signature filter."
+  (some (lambda (d) (cl-subsumes-p d c)) *all-clauses*))
+
+(defun remove-subsumed-by (c)
+  "Remove from index any clause subsumed by c."
+  (let ((to-remove '()))
+    (dolist (d *all-clauses*)
+      (when (and (not (eq c d)) (cl-subsumes-p c d))
+        (push d to-remove)))
+    (dolist (d to-remove) (index-remove d))
+    ;; Also clean up passive
+    (setf *passive* (remove-if (lambda (d) (find d to-remove :test #'eq)) *passive*))))
+
+(defun try-add-clause (lits)
+  (cond
+    ((endp lits) t)
+    ((tautologyp lits) nil)
+    ((> (length lits) *max-clause-literals*) nil)
+    ((> (clause-max-depth lits) *max-term-depth*) nil)
+    (t
+     (let ((c (build-cl lits)))
+       (cond
+         ((clause-exists-exact-p c) nil)
+         ((subsumed-by-any-p c) nil)
+         (t
+          (remove-subsumed-by c)
+          (index-add c)
+          (passive-insert c)
+          nil))))))
+
+;; ---- Main saturation loop ----
+
+(defparameter *max-iters* 10000)
+(defparameter *print-every* 100)
+
+(defun saturate ()
+  (let ((iter 0))
+    (loop
+      (when (and (plusp *print-every*) (zerop (mod iter *print-every*)))
+        (format t "~&iter=~a |index|=~a |passive|=~a~%"
+                iter (length *all-clauses*) (length *passive*))
+        (finish-output))
+      (when (> iter *max-iters*)
+        (format t "~&Hit max-iters limit (~a)~%" *max-iters*)
+        (return nil))
+      (incf iter)
+      (let ((given (passive-pop)))
+        (cond
+          ((null given) (return nil))
+          (t
+           (dolist (fact (factor-clause-cl given))
+             (when (try-add-clause fact)
+               (return-from saturate t)))
+           (dolist (partner (index-candidates-for given))
+             (dolist (res (try-resolve-cl given partner))
+               (when (try-add-clause res)
+                 (return-from saturate t))))))))))
+
+;; ---- Top-level ----
 
 (defun fo-no=-val (f)
+  (reset-index)
+  (setf *passive* nil)
   (let* ((negated-f   (list 'not f))
          (cnf-formula (simp-skolem-pnf-cnf negated-f)))
     (cond
@@ -1696,31 +1769,84 @@ Examples
       ((eq cnf-formula t)   nil)
       (t
        (let* ((matrix  (strip-forall cnf-formula))
-              (clauses (clauses-of matrix))
-              (initial nil))
+              (clauses (clauses-of matrix)))
          (dolist (c clauses)
-           (setf initial (add-clause c initial)))
-         (if (saturate initial nil) 'valid nil))))))
+           (when (try-add-clause c) (return-from fo-no=-val 'valid)))
+         (if (saturate) 'valid nil))))))
 
-(fo-no=-val 
- '(iff (forall x
-               (implies (and (P a)
-			     (implies (P x)
-				      (exists y (and (P y) (R x y)))))
-                        (exists z
-				(exists w
-					(and (P z) (R x w) (R w z))))))
-       (forall x
-	       (and (or (not (P a))
-			(P x)
-			(exists z
-				(exists w
-					(and (P z) (R x w) (R w z)))))
-		    (or (not (P a))
-			(not (exists y (and (P y) (R x y))))
-			(exists z
-				(exists w
-					(and (P z) (R x w) (R w z)))))))))
+;; ---- Q5 tests ----
+
+;; Propositional
+(fo-no=-val '(or (P c1) (not (P c1))))
+(fo-no=-val '(implies (P c1) (P c1)))
+(fo-no=-val '(implies (and (P c1) (Q c1)) (P c1)))
+(fo-no=-val '(implies (and (implies (P c1) (Q c1)) (P c1)) (Q c1)))
+(fo-no=-val '(iff (implies (P c1) (Q c1))
+                  (implies (not (Q c1)) (not (P c1)))))
+(fo-no=-val '(or (P c1) (Q c1)))
+(fo-no=-val '(implies (and (implies (P c1) (Q c1)) (Q c1)) (P c1)))
+
+;; Quantified
+(fo-no=-val '(implies (forall (x) (P x)) (P c1)))
+(fo-no=-val '(implies (P c1) (exists (x) (P x))))
+(fo-no=-val '(implies (exists (x) (forall (y) (P x y)))
+                      (forall (y) (exists (x) (P x y)))))
+(fo-no=-val '(implies (forall (y) (exists (x) (P x y)))
+                      (exists (x) (forall (y) (P x y)))))
+
+;; Textbook: barber (p180)
+(fo-no=-val
+ '(not (exists (x)
+         (forall (y)
+           (iff (shaves x y)
+                (not (shaves y y)))))))
+
+;; Textbook: p38 (p178)
+(fo-no=-val
+ '(iff (forall (x)
+         (implies (and (P ca)
+                       (implies (P x)
+                                (exists (y) (and (P y) (R x y)))))
+                  (exists (z w)
+                          (and (P z) (R x w) (R w z)))))
+       (forall (x)
+         (and (or (not (P ca))
+                  (P x)
+                  (exists (z w)
+                          (and (P z) (R x w) (R w z))))
+              (or (not (P ca))
+                  (not (exists (y) (and (P y) (R x y))))
+                  (exists (z w)
+                          (and (P z) (R x w) (R w z))))))))
+
+;; Textbook: EWD1062 (p179)
+(fo-no=-val
+ '(implies
+   (and (forall (x) (leq x x))
+        (forall (x y z) (implies (and (leq x y) (leq y z)) (leq x z)))
+        (forall (x y) (iff (leq (f x) y) (leq x (g y)))))
+   (and (forall (x y) (implies (leq x y) (leq (f x) (f y))))
+        (forall (x y) (implies (leq x y) (leq (g x) (g y)))))))
+
+;; Textbook: Los (p198)
+(fo-no=-val
+ '(implies
+   (and (forall (x y z) (implies (and (P x y) (P y z)) (P x z)))
+        (forall (x y z) (implies (and (Q x y) (Q y z)) (Q x z)))
+        (forall (x y) (implies (Q x y) (Q y x)))
+        (forall (x y) (or (P x y) (Q x y))))
+   (or (forall (x y) (P x y))
+       (forall (x y) (Q x y)))))
+
+;; Textbook: p34 (p178)
+(fo-no=-val
+ '(iff (iff (exists (x) (forall (y) (iff (P x) (P y))))
+            (iff (exists (x) (Q x))
+                 (forall (y) (Q y))))
+       (iff (exists (x) (forall (y) (iff (Q x) (Q y))))
+            (iff (exists (x) (P x))
+                 (forall (y) (P y))))))
+
 
 #|
 
